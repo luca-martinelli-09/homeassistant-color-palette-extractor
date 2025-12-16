@@ -1,4 +1,4 @@
-"""Module for color_extractor (RGB extraction from images) component."""
+"""Module for color_palette_extractor (RGB extraction from images) component."""
 
 import asyncio
 import io
@@ -14,11 +14,11 @@ from homeassistant.components.light import (
     DOMAIN as LIGHT_DOMAIN,
     LIGHT_TURN_ON_SCHEMA,
 )
-from homeassistant.const import SERVICE_TURN_ON as LIGHT_SERVICE_TURN_ON
+from homeassistant.const import SERVICE_TURN_ON as LIGHT_SERVICE_TURN_ON, ATTR_ENTITY_ID
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.helpers import aiohttp_client, config_validation as cv
 
-from .custom_components.color_palette_extractor.const import ATTR_PATH, ATTR_URL, DOMAIN, SERVICE_TURN_ON
+from .const import ATTR_PATH, ATTR_URL, DOMAIN, SERVICE_TURN_ON
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,8 +28,8 @@ SERVICE_SCHEMA = vol.All(
     cv.make_entity_service_schema(
         {
             **LIGHT_TURN_ON_SCHEMA,
-            vol.Exclusive(ATTR_PATH, "color_extractor"): cv.isfile,
-            vol.Exclusive(ATTR_URL, "color_extractor"): cv.url,
+            vol.Exclusive(ATTR_PATH, "color_palette_extractor"): cv.isfile,
+            vol.Exclusive(ATTR_URL, "color_palette_extractor"): cv.url,
         }
     ),
 )
@@ -43,20 +43,25 @@ def _get_file(file_path: str) -> str:
     return file_path
 
 
-def _get_color(file_handler: io.BytesIO | str) -> tuple[int, int, int]:
+def _get_color(file_handler: io.BytesIO | str, light_count: int = 1) -> list[tuple[int, int, int]]:
     """Given an image file, extract the predominant color from it."""
     color_thief = ColorThief(file_handler)
 
-    # get_color returns a SINGLE RGB value for the given image
-    color = color_thief.get_color(quality=1)
+    if light_count == 1:
+        # get_color returns a single RGB value for the given image
+        colors = [color_thief.get_color(quality=1)]
+        _LOGGER.debug("get_palette response: %s", colors)
+    else:
+        colors = color_thief.get_palette(quality=1, color_count=light_count)
+        _LOGGER.debug("get_palette response: %s", colors)
 
-    _LOGGER.debug("Extracted RGB color %s from image", color)
+    _LOGGER.debug("Extracted %d RGB colors from image", len(colors))
 
-    return color
+    return colors
 
 
 async def _async_extract_color_from_url(
-    hass: HomeAssistant, url: str
+    hass: HomeAssistant, url: str, number_of_lights: int = 1
 ) -> tuple[int, int, int] | None:
     """Handle call for URL based image."""
     if not hass.config.is_allowed_external_url(url):
@@ -85,14 +90,14 @@ async def _async_extract_color_from_url(
     content = await response.content.read()
 
     with io.BytesIO(content) as _file:
-        _file.name = "color_extractor.jpg"
+        _file.name = "color_palette_extractor.jpg"
         _file.seek(0)
 
-        return _get_color(_file)
+        return _get_color(_file, number_of_lights)
 
 
 def _extract_color_from_path(
-    hass: HomeAssistant, file_path: str
+    hass: HomeAssistant, file_path: str, number_of_lights: int = 1
 ) -> tuple[int, int, int] | None:
     """Handle call for local file based image."""
     if not hass.config.is_allowed_path(file_path):
@@ -105,26 +110,30 @@ def _extract_color_from_path(
     _LOGGER.debug("Getting predominant RGB from file path '%s'", file_path)
 
     _file = _get_file(file_path)
-    return _get_color(_file)
+    return _get_color(_file, number_of_lights)
 
 
 async def async_handle_service(service_call: ServiceCall) -> None:
-    """Decide which color_extractor method to call based on service."""
+    """Decide which color_palette_extractor method to call based on service."""
     service_data = dict(service_call.data)
+    number_of_lights = len(service_data[ATTR_ENTITY_ID])
 
     try:
         if ATTR_URL in service_data:
             image_type = "URL"
             image_reference = service_data.pop(ATTR_URL)
-            color = await _async_extract_color_from_url(
-                service_call.hass, image_reference
+            colors = await _async_extract_color_from_url(
+                service_call.hass, image_reference, number_of_lights
             )
 
         elif ATTR_PATH in service_data:
             image_type = "file path"
             image_reference = service_data.pop(ATTR_PATH)
-            color = await service_call.hass.async_add_executor_job(
-                _extract_color_from_path, service_call.hass, image_reference
+            colors = await service_call.hass.async_add_executor_job(
+                _extract_color_from_path,
+                service_call.hass,
+                image_reference,
+                number_of_lights,
             )
 
     except UnidentifiedImageError as ex:
@@ -136,12 +145,22 @@ async def async_handle_service(service_call: ServiceCall) -> None:
         )
         return
 
-    if color:
-        service_data[ATTR_RGB_COLOR] = color
+    if colors:
+        if isinstance(service_data[ATTR_ENTITY_ID], list):
+            lights = service_data[ATTR_ENTITY_ID]
+        else:
+            lights = [service_data[ATTR_ENTITY_ID]]
 
-        await service_call.hass.services.async_call(
-            LIGHT_DOMAIN, LIGHT_SERVICE_TURN_ON, service_data, blocking=True
-        )
+        for entity_id, color in zip(lights, colors):
+            data = {
+                **service_data,
+                ATTR_ENTITY_ID: entity_id,
+                ATTR_RGB_COLOR: color,
+            }
+
+            await hass.services.async_call(
+                LIGHT_DOMAIN, LIGHT_SERVICE_TURN_ON, data, blocking=True
+            )
 
 
 @callback
