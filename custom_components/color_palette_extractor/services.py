@@ -14,7 +14,7 @@ from homeassistant.components.light import (
     DOMAIN as LIGHT_DOMAIN,
     LIGHT_TURN_ON_SCHEMA,
 )
-from homeassistant.const import SERVICE_TURN_ON as LIGHT_SERVICE_TURN_ON, ATTR_ENTITY_ID
+from homeassistant.const import ATTR_ENTITY_ID, SERVICE_TURN_ON as LIGHT_SERVICE_TURN_ON
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.helpers import aiohttp_client, config_validation as cv
 

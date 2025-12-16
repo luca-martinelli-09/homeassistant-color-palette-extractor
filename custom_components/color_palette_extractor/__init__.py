@@ -1,4 +1,4 @@
-"""Module for color_extractor (RGB extraction from images) component."""
+"""Module for color_palette_extractor (RGB extraction from images) component."""
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
