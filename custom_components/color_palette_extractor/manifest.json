@@ -1,0 +1,9 @@
+{
+  "domain": "color_palette_extractor",
+  "name": "ColorPaletteExtractor",
+  "codeowners": ["@luca-martinelli-09"],
+  "config_flow": true,
+  "documentation": "https://github.com/luca-martinelli-09/homeassistant-color-palette-extractor",
+  "requirements": ["colorthief==0.2.1"],
+  "single_config_entry": true
+}
