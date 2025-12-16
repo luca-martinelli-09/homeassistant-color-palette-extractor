@@ -158,7 +158,7 @@ async def async_handle_service(service_call: ServiceCall) -> None:
                 ATTR_RGB_COLOR: color,
             }
 
-            await hass.services.async_call(
+            await service_call.hass.services.async_call(
                 LIGHT_DOMAIN, LIGHT_SERVICE_TURN_ON, data, blocking=True
             )
 
